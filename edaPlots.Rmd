@@ -1,0 +1,160 @@
+---
+title: "finalProjectVizs"
+author: "Alexander Grunenwald"
+date: "2024-11-17"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(faraway)
+library(VIM)
+library(fastDummies)
+
+diabetes <- faraway::diabetes
+```
+
+403 African Americans were interviewed in a study to understand the prevalence of obesity, diabetes, and other cardiovascular risk factors in central Virginia. Glycosolated hemoglobin (glyhb) greater than 7.0 is usually taken as a positive diagnosis of diabetes. We are interested in identifying the most important predicotrs that contribute to a high glyhb level in african american patience while also creating a predictive model that accurately identifies patience with diabetes. 
+
+
+```{r}
+head(diabetes)
+```
+
+In this data set, there are over 500 missing values that will need to be dealt with. The majority of the missing value cases occur in the second blood preassure measurments. The missing entries may have occured because the patient has not come for a second measurment. 
+```{r}
+summary(diabetes)
+```
+
+There are more femals than men in this study but almost near equal propotion of location. 
+```{r plots of factor distribution}
+par(mfrow=c(1,2))
+plot(diabetes$gender)
+plot(diabetes$location)
+```
+distribution of glyhb is heavy right tailed. There is no significant difference in the means and variances of the gender and location groups in regards to glyhb level. However, It could be that male or females may have higher glhyb values.  
+```{r distribution of glhyb}
+par(mfrow=c(1,3))
+hist(x=diabetes$glyhb)
+plot(diabetes$glyhb~diabetes$gender)
+plot(diabetes$glyhb~diabetes$location)
+```
+```{r}
+f.test.results.gender <- var.test(diabetes$glyhb~diabetes$gender)
+t.test.results.gender <- t.test(diabetes$glyhb~diabetes$gender, var.equal = f.test.results.gender$p.value > 0.05)
+f.test.results.location <- var.test(diabetes$glyhb~diabetes$location)
+f.test.results.location <- t.test(diabetes$glyhb~diabetes$location, var.equal = f.test.results.location$p.value > 0.05)
+```
+
+Lets take a look at the patients that could have diabetes, that is, have a glhyb level of above 7.0.
+
+```{r}
+potential.risk <- diabetes %>% 
+  filter(glyhb >= 7)
+
+summary(potential.risk)
+
+par(mfrow=c(1,3))
+hist(x=potential.risk$glyhb)
+plot(potential.risk$glyhb~potential.risk$gender)
+plot(potential.risk$glyhb~potential.risk$location)
+
+
+f.test.results.gender <- var.test(potential.risk$glyhb~potential.risk$gender)
+t.test.results.gender <- t.test(potential.risk$glyhb~potential.risk$gender, var.equal = f.test.results.gender$p.value > 0.05)
+f.test.results.location <- var.test(potential.risk$glyhb~potential.risk$location)
+f.test.results.location <- t.test(potential.risk$glyhb~potential.risk$location, var.equal = f.test.results.location$p.value > 0.05)
+```
+No significant differences between male and femal and location. But the male bands are much wider compared to those of females. Furthemore, out of the 403 patientes in this data set, only 60 have a potential risk for diabetes. 
+
+
+### Correlation Annalysis
+
+We have some highly corrolated features to glyhb. Age, Chol, stab.glu, ratio, and hdl. 
+```{r}
+diabetes_clean <- diabetes %>% 
+  dplyr::select(-c(id, location, gender, frame)) %>% 
+  filter(complete.cases(.))
+
+# Compute the correlation matrix
+cor_matrix <- cor(diabetes_clean)
+diag(cor_matrix) <- 0 
+# Convert the correlation matrix to a long format
+cor_data <- as.data.frame(as.table(cor_matrix))
+
+# Plot the heat map
+ggplot(cor_data, aes(Var1, Var2, fill = Freq)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed()
+```
+
+
+There seem to be some cluster of patients 
+```{r}
+par(mfrow=c(2,2))
+plot(diabetes$age, diabetes$glyhb)
+plot(diabetes$chol, diabetes$glyhb)
+plot(diabetes$stab.glu, diabetes$glyhb)
+plot(diabetes$ratio, diabetes$glyhb)
+```
+```{r}
+par(mfrow=c(1,2))
+plot(diabetes$hip, diabetes$weight) # Makes snes, the wider you are the heavier 
+plot(diabetes$waist, diabetes$weight) # may be reundent information. 
+```
+### Impute missing values
+```{r}
+diabetes.clean <- diabetes %>% 
+  kNN(imp_var = F)
+```
+
+```{r}
+diabetes_clean <- diabetes.clean %>% 
+  dplyr::select(-c(id, location, gender, frame))
+
+# Compute the correlation matrix
+cor_matrix <- cor(diabetes_clean)
+diag(cor_matrix) <- 0 
+# Convert the correlation matrix to a long format
+cor_data <- as.data.frame(as.table(cor_matrix))
+
+# Plot the heat map
+ggplot(cor_data, aes(Var1, Var2, fill = Freq)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
+                       name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed()
+```
+
+### Perform OLS 
+
+```{r}
+model.data.X <- diabetes.clean %>% 
+  dplyr::select(-c(id, glyhb)) %>% 
+  fastDummies::dummy_columns(remove_first_dummy = T, remove_selected_columns = T) %>% 
+  scale(center = T, scale = T) %>% 
+  as.data.frame()
+model.data.y <- diabetes.clean$glyhb %>% 
+  log()
+model.data <- cbind(model.data.X, model.data.y)
+linear.model <- lm(model.data.y ~.,data=model.data)
+summary(linear.model)
+par(mfrow=c(2,2))
+plot(linear.model)
+```
+
+```{r}
+
+```
+
