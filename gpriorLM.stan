@@ -35,3 +35,10 @@ model {
   // Likelihood
   y ~ normal(mu, sqrt(sigma2));
 }
+
+generated quantities {
+  vector[N] y_pred;  // Predicted values
+  for (n in 1:N) {
+    y_pred[n] = normal_rng(dot_product(X[n], beta), sqrt(sigma2));
+  }
+}
